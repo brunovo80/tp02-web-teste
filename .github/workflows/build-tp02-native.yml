@@ -40,6 +40,15 @@ jobs:
           "$SM" --list_installed | head -40 || true
           yes | "$SM" --licenses >/dev/null || true
           "$SM" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Corrigir inicialização TextureView
+        shell: bash
+        run: |
+          FILE="native-tp02/app/src/main/java/br/com/tp02/prototipo/MainActivity.java"
+          test -f "$FILE" || { echo "MainActivity nao encontrada"; exit 1; }
+          grep -Fq 'preview.setBackgroundColor(Color.BLACK);' "$FILE" || { echo "Trecho original nao encontrado; revisar patch"; exit 1; }
+          sed -i 's/preview.setBackgroundColor(Color.BLACK);//' "$FILE"
+          if grep -Fq 'preview.setBackgroundColor(Color.BLACK);' "$FILE"; then echo "Patch nao aplicado"; exit 1; fi
+          echo "TextureView corrigida: sem fundo incompatível"
       - name: Compilar APK de teste
         run: gradle -p native-tp02 :app:assembleDebug --no-daemon --stacktrace
       - name: Arquivo APK
