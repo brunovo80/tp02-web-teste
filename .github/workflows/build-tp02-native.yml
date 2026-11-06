@@ -31,10 +31,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Preparar Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Instalar componentes Android
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Preparar SDK Android preinstalado
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          which sdkmanager
+          sdkmanager --list_installed | head -40 || true
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Compilar APK de teste
         run: gradle -p native-tp02 :app:assembleDebug --no-daemon --stacktrace
       - name: Arquivo APK
