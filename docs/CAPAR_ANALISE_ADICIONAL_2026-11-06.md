@@ -29,3 +29,8 @@
 - **Descoberta:** não foi comprovada a identificação automática do monitor nas condições atuais; não escolher MACs sem nome com base apenas em RSSI.
 - **Transmissão real:** a implementação atual é um módulo de protocolo com testes, não um aplicativo completo testado em hardware.
 - **Regressão:** preservar Capar instalado e o APK experimental anterior; nunca declarar espelhamento funcional sem imagem demonstrada no monitor.
+
+## Evidência adicional: lista de modelos é remota
+
+- Na classe `MainActivity$getDeviceList$1`, o APK realiza uma requisição à rota `/device/model/list?device_type=selfie_stick`, responsável por preencher a lista `AppConfig.getDeviceList()` usada pela descoberta BLE. Portanto, o código-fonte do APK 1.4.4 **não fornece sozinho uma lista estática exaustiva de nomes** que permita reconhecer dispositivos não identificados sem consulta/autorização.
+- Não foi realizada nenhuma chamada ao serviço do fornecedor. A reprodução dessa dependência necessita de acesso oficialmente autorizado. O filtro por nome do protótipo (`SelfieCom` fixo) era estruturalmente incompleto.
