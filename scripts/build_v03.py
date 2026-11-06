@@ -106,7 +106,7 @@ put(ble,'''        @Override public void onCharacteristicChanged(BluetoothGatt g
             if(value==null)return;
             if(Tp02Wire.command(value)==Tp02Wire.LICENSE_RESPONSE){
                 try{
-                    licenseSession.acceptDeviceLicenseReply(value);
+                    licenseSession.acceptLicenseResponse(value);
                     events.info("Resposta F0 válida decodificada; vinculação com fabricante ainda necessária.");
                     events.info("Licença não é exibida nem transmitida a serviços externos.");
                 }catch(Exception e){events.info("Resposta F0 inesperada ou inválida.");}
@@ -121,14 +121,14 @@ put(ble,'''if(Build.VERSION.SDK_INT<33) events.received(c.getValue().clone());''
 '''if(Build.VERSION.SDK_INT<33) receive(c.getValue());''')
 put(ble,'''    public boolean ready(){return ready;}''',
 '''    public boolean ready(){return ready;}
-    public boolean authorized(){return licenseSession.maySendImage() || licenseSession.state()==Tp02Session.State.AUTHORIZED;}''')
+    public boolean authorized(){return licenseSession.mayStream() || licenseSession.state()==Tp02Session.State.AUTHORIZED;}''')
 put(ble,'''public void ackOpen(){if(ready) writeSmall(Tp02Protocol.openAck());}''',
 '''public void ackOpen(){
         if(!authorized()){events.info("OPEN_CAMERA não confirmado: falta autorização válida.");return;}
         if(ready)writeSmall(Tp02Wire.openCameraAck());
     }''')
 put(ble,'''        if(!ready || jpeg==null || jpeg.length==0 || !sending.compareAndSet(false,true))return false;''',
-'''        if(!ready || !licenseSession.maySendImage() || jpeg==null || jpeg.length==0 || !sending.compareAndSet(false,true))return false;''')
+'''        if(!ready || !licenseSession.mayStream() || jpeg==null || jpeg.length==0 || !sending.compareAndSet(false,true))return false;''')
 put(ble,'''        stopScan();main.removeCallbacks(feed);sending.set(false);ready=false;tx=null;''',
 '''        stopScan();main.removeCallbacks(feed);sending.set(false);jpegQueue.reset();licenseSession.reset();ready=false;tx=null;''')
 # Eliminate the impression that arbitrary MACs can be safely selected by the user.
