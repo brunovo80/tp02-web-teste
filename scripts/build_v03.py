@@ -29,9 +29,9 @@ put(manifest,'<uses-permission android:name="android.permission.BLUETOOTH_SCAN" 
              '<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />')
 put(manifest,'android:label="TP02 Imagem Real (Teste)"','android:label="TP02 Conexão 0.3"')
 
-put(ui,'private Button connect, selectBle, shoot;','private Button connect, shoot;')
+put(ui,'private Button connect, choose, shoot;','private Button connect, shoot;')
 s=ui.read_text(encoding="utf-8")
-start=s.index('        selectBle=new Button(this);')
+start=s.index('        choose=new Button(this);')
 end=s.index('        shoot=new Button(this);',start)
 s=s[:start]+'''        TextView auto=label("Identificação automática. O aplicativo NÃO conecta a periféricos desconhecidos.",12);
         root.addView(auto);
@@ -56,7 +56,7 @@ put(ui,'''info("TP02 ← resposta de abertura AA 55 01 01.");''',
 '''info("TP02 ← resposta de abertura AA 55 01 00.");''')
 put(ui,'''if(!ble.ready() || !cameraReady){info("Ainda sem BLE e câmera prontos.");return;}''',
 '''if(!ble.ready() || !ble.authorized() || !cameraReady){info("Câmera ou autorização ainda indisponível. Sem envio ao monitor.");return;}''')
-put(ui,'''Aplicativo experimental 0.2.0 - BLE diagnóstico.''',
+put(ui,'''Aplicativo experimental 0.2.0 / diagnóstico BLE.''',
 '''TP02 v0.3 - diagnóstico de Bluetooth e licença; vinculação do fabricante ainda não implementada.''')
 
 # Add the clean-room protocol library to the Android source set.
@@ -81,11 +81,10 @@ put(ble,'''                events.info("BLE conectado. Descobrindo serviços..."
 put(ble,'''                ready=false;sending.set(false);events.connected(false);''',
 '''                ready=false;sending.set(false);jpegQueue.reset();licenseSession.reset();events.connected(false);''')
 put(ble,'''            if(status==BluetoothGatt.GATT_SUCCESS && ready){
-                byte[] f4=new byte[]{(byte)0xAA,0x55,(byte)0xF4,0x00};
-                boolean sent=sendOne(f4);
-                events.info("Controle F4 identificado no Capar 1.4.4: envio="+sent);
+                boolean sent=sendOne(new byte[]{(byte)0xAA,0x55,(byte)0xF4,0x00});
+                events.info("Comando F4 observado no Capar 1.4.4: enviado="+sent);
             }
-            events.info("Aguardando comandos/notificações do monitor; licença F0 não implementada.");''',
+            events.info("Esperando comandos; negociação de licença não implementada.");''',
 '''            if(status==BluetoothGatt.GATT_SUCCESS && ready){
                 try{
                     licenseSession.onGattReady();
