@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101826">
+<title>TP02 • Imagem Real — Teste Web</title>
+<style>
+:root{color-scheme:dark;--bg:#0a101c;--surface:#121d2d;--line:#2b394b;--text:#eef4ff;--muted:#a9b8ce;--cyan:#64daf0;--ok:#65daa0;--red:#f8a5a5}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.48 system-ui,-apple-system,'Segoe UI',sans-serif;padding:18px 14px 30px}main{max-width:680px;margin:auto}header{padding:9px 2px 17px}header small{letter-spacing:.17em;color:var(--cyan);font-weight:750}h1{font-size:26px;line-height:1.17;margin:8px 0 8px;letter-spacing:-.045em}p{color:var(--muted);margin:5px 0 12px}.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:17px;margin-bottom:12px}h2{font-size:15px;margin:0 0 10px}button{font:inherit;font-weight:680;border:0;background:#2b384d;color:var(--text);padding:12px 14px;border-radius:11px;cursor:pointer;touch-action:manipulation}button.primary{background:#9ce9f4;color:#071423}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}.actions button{min-height:53px}.wide{grid-column:1/-1}video{width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:12px;background:#03080d;max-height:48vh}#snapshot{max-width:130px;width:35%;border:1px solid var(--line);border-radius:8px} .medialine{display:flex;gap:12px;align-items:start} .medialine video{flex:1;min-width:0} .medialine #snapshot{flex:0 0 33%}.status{font-size:14px;margin-bottom:8px;font-weight:650}.muted{color:var(--muted);font-size:13px}.ok{color:var(--ok)}.warn{color:var(--red)}#log{font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#050b14;padding:12px;border-radius:12px;max-height:320px;overflow:auto;min-height:120px;color:#bed1e7}.logbuttons{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}.logbuttons button{font-size:13px;padding:9px 12px}.foot{font-size:12px;color:#9cb0c9;margin-top:15px}
+</style>
+</head>
+<body><main>
+<header><small>LYNXZ TP02 / SELFIECOM</small><h1>Imagem real • teste web</h1><p>Experimento local no Samsung. A câmera e o Bluetooth são acessados diretamente pelo navegador, sem enviar fotos a servidor.</p></header>
+<div class="panel"><h2>Condição do teste</h2><div id="status" class="status">Aguardando câmera e conexão</div><p class="muted" id="compat">Verificando suporte do navegador...</p></div>
+<div class="panel"><h2>1. Câmera do celular</h2><div class="medialine"><video id="video" autoplay muted playsinline></video><canvas id="snapshot" width="160" height="192" aria-label="Último quadro enviado"></canvas></div><div class="actions" style="margin-top:12px"><button id="camera" class="primary">Ativar câmera traseira</button><button id="flip">Inverter câmera</button></div></div>
+<div class="panel"><h2>2. Conexão BLE com a telinha</h2><div class="actions"><button id="connect" class="primary">Conectar SelfieCom</button><button id="disconnect">Desconectar</button></div><p class="muted">Feche o Capar e desconecte o nRF Connect antes de iniciar. O Android pode pedir autorização para o Bluetooth.</p></div>
+<div class="panel"><h2>3. Teste de imagem real</h2><div class="actions"><button class="primary wide" id="send">Enviar uma imagem real ao TP02</button></div><p class="muted">Também tentaremos responder automaticamente se a telinha pedir abertura de câmera ou um quadro JPEG. Enviar os dados não comprova que o aparelho exibiu a imagem: confirme olhando a telinha.</p></div>
+<div class="panel"><h2>Registro do teste</h2><div id="log" role="log" aria-live="off"></div><div class="logbuttons"><button id="copy">Copiar registro</button><button id="save">Salvar registro (.txt)</button><button id="clear">Limpar tela</button></div></div>
+<p class="foot">Protótipo experimental v0.1. Página HTTPS necessária. Use preferencialmente Google Chrome no Android. Sem biblioteca externa, sem analytics e sem chamadas de rede. A conexão exige ação explícita do usuário. Não garante a compatibilidade do firmware do TP02.</p>
+</main>
+<script>
+'use strict';
+const SERVICE='6e400001-b5a3-f393-e0a9-e50e24dcca9d';
+const WRITE='6e400002-b5a3-f393-e0a9-e50e24dcca9d';
+const NOTIFY='6e400003-b5a3-f393-e0a9-e50e24dcca9d';
+const $=id=>document.getElementById(id);
+let stream=null, device=null, tx=null, rx=null, isSending=false, openSeen=false, pendingFrame=false, lastRequestAt=0, cameraFacing='environment', screenWidth=160, screenHeight=192, maxBytes=15360, logLines=[];
+function log(s){const line=new Date().toLocaleTimeString('pt-BR')+'  '+s; logLines.push(line);if(logLines.length>1200)logLines.shift();$('log').textContent=logLines.slice(-200).join('\n');$('log').scrollTop=$('log').scrollHeight;}
+function status(s,good=false){$('status').textContent=s;$('status').className='status '+(good?'ok':'');}
+function hex(b){return Array.from(b,v=>v.toString(16).padStart(2,'0').toUpperCase()).join(' ')}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function u16(b,i){return b[i] | (b[i+1]<<8)}
+function u32(b,i){return ((b[i]|(b[i+1]<<8)|(b[i+2]<<16)|(b[i+3]<<24))>>>0)}
+async function cameraStart(){try{if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:cameraFacing},width:{ideal:1280},height:{ideal:720}}});$('video').srcObject=stream;await $('video').play();log('Câmera iniciada: '+stream.getVideoTracks()[0].label);status(tx?'Câmera ativa e BLE conectado':'Câmera ativa. Conecte o SelfieCom.',!!tx);if(openSeen && tx)await ackOpen();}catch(e){log('ERRO câmera: '+e.name+' — '+e.message);status('Não foi possível ativar a câmera');}}
+function disconnected(){tx=null;rx=null;openSeen=false;pendingFrame=false;status('BLE desconectado');log('Bluetooth desconectado');}
+async function bleConnect(){if(!navigator.bluetooth){log('ERRO: Web Bluetooth indisponível. Abra no Google Chrome em HTTPS.');return;}try{
+// requestDevice deve ocorrer diretamente após o toque do usuário.
+device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'SelfieCom'}],optionalServices:[SERVICE]});
+device.addEventListener('gattserverdisconnected',disconnected);
+log('Dispositivo selecionado: '+(device.name||'sem nome'));
+status('Conectando ao SelfieCom...');
+const server=await device.gatt.connect();const svc=await server.getPrimaryService(SERVICE);
+tx=await svc.getCharacteristic(WRITE);rx=await svc.getCharacteristic(NOTIFY);
+rx.addEventListener('characteristicvaluechanged',onNotify);
+await rx.startNotifications();
+log('NOTIFY ativo. WRITE_NO_RESPONSE='+tx.properties.writeWithoutResponse+'.');
+status('SelfieCom conectado via BLE',true);
+log('Conectado! Aguardando mensagens de abertura ou pedido de quadro.');
+}catch(e){log('ERRO BLE: '+e.name+' — '+e.message);status('Falha ao conectar');}}
+function onNotify(evt){const v=evt.target.value;const b=new Uint8Array(v.buffer.slice(v.byteOffset,v.byteOffset+v.byteLength));log('TP02 → '+hex(b));if(b.length<4||b[0]!==0xAA||b[1]!==0x55)return;
+const cmd=b[2];
+if(cmd===1){if(b.length>=12){const w=u16(b,3),h=u16(b,5),budget=u32(b,8);if(w>=32&&w<=1024&&h>=32&&h<=1024){screenWidth=w;screenHeight=h;}if(budget>=256 && budget<=250000)maxBytes=budget; log('Abertura pedida: '+screenWidth+'×'+screenHeight+'; orçamento '+maxBytes+' bytes');}openSeen=true; if(stream)ackOpen().catch(e=>log('ERRO resposta de abertura: '+e.message));else log('Ative a câmera para responder ao pedido de abertura.');}
+else if(cmd===3){log('TP02 pediu uma imagem (03).');const now=Date.now();if(now-lastRequestAt<150){return;}lastRequestAt=now;if(isSending){pendingFrame=true;return;}sendImage('pedido do TP02');}
+else if(cmd===2)log('Botão foto/vídeo detectado');else if(cmd===6)log('Botão inverter câmera detectado');else if(cmd===10)log('Botão volume + detectado');else if(cmd===11)log('Botão volume − detectado');}
+async function writeChunk(b){if(!tx)throw new Error('Sem característica WRITE');for(let retry=0;retry<3;retry++)try{if(tx.writeValueWithoutResponse)await tx.writeValueWithoutResponse(b);else await tx.writeValue(b);return;}catch(e){if(retry===2)throw e;await sleep(75);}}
+async function ackOpen(){if(!tx||!stream)return;log('Respondendo abertura: AA 55 01 01');await writeChunk(new Uint8Array([0xAA,0x55,0x01,0x01]));}
+function imageCanvas(){const video=$('video');if(!stream || video.readyState<2)throw new Error('Câmera não está pronta');let w=screenWidth,h=screenHeight;const canvas=$('snapshot');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d',{alpha:false});ctx.fillStyle='#000';ctx.fillRect(0,0,w,h);
+const vw=video.videoWidth,vh=video.videoHeight,ratio=w/h,vr=vw/vh;let sx=0,sy=0,sw=vw,sh=vh;if(vr>ratio){sw=vh*ratio;sx=(vw-sw)/2;}else{sh=vw/ratio;sy=(vh-sh)/2;}ctx.drawImage(video,sx,sy,sw,sh,0,0,w,h);return canvas;}
+async function jpegWithinBudget(canvas){for(let q=.7;q>=.1;q-=.1){const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',q));if(blob && blob.size<=maxBytes)return new Uint8Array(await blob.arrayBuffer());}throw new Error('JPEG excede o limite '+maxBytes+' bytes');}
+async function sendImage(reason='manual'){if(isSending){log('Envio ocupado — quadro ignorado');return;}if(!tx){log('ERRO: conecte SelfieCom antes de enviar.');return;}if(!stream){log('ERRO: ative câmera antes de enviar.');return;}isSending=true;try{const canvas=imageCanvas();const bytes=await jpegWithinBudget(canvas);log('Enviando JPEG '+reason+': '+screenWidth+'×'+screenHeight+' / '+bytes.length+' bytes.');const chunk=20,delay=20;for(let offset=0;offset<bytes.length;offset+=chunk){if(!tx)throw new Error('BLE desconectado durante envio');await writeChunk(bytes.slice(offset,offset+chunk));if(offset && offset%1000===0)log('Dados enviados ao Bluetooth: '+Math.min(offset,bytes.length)+' / '+bytes.length);await sleep(delay);}log('FIM: bytes enviados ao Bluetooth. Verifique VISUALMENTE se apareceu imagem no TP02.');}catch(e){log('ERRO envio JPEG: '+e.name+' — '+e.message);}finally{isSending=false;if(pendingFrame&&tx){pendingFrame=false;await sleep(100);if(tx)sendImage('pedido acumulado');}}}
+$('camera').onclick=cameraStart;$('flip').onclick=async()=>{cameraFacing=cameraFacing==='environment'?'user':'environment';await cameraStart();};
+$('connect').onclick=bleConnect;$('disconnect').onclick=()=>{if(device&&device.gatt&&device.gatt.connected)device.gatt.disconnect();else log('Nenhuma conexão ativa.');};
+$('send').onclick=()=>sendImage('manual');
+$('clear').onclick=()=>{$('log').textContent='';logLines=[];log('Registro visual limpo.');};
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(logLines.join('\n'));log('Registro copiado.');}catch(e){log('Não foi possível copiar: '+e.message);}};
+$('save').onclick=()=>{const blob=new Blob([logLines.join('\n')+'\n'],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='tp02-registro-'+new Date().toISOString().slice(0,10)+'.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);};
+const checks=[];if(!window.isSecureContext)checks.push('Abra por HTTPS (não pelo arquivo local).');if(!('bluetooth' in navigator))checks.push('Web Bluetooth indisponível neste navegador.');if(!navigator.mediaDevices?.getUserMedia)checks.push('Acesso à câmera indisponível.');
+$('compat').textContent=checks.length?'Atenção: '+checks.join(' '):'Navegador compatível em princípio. Use Chrome, Bluetooth ligado e conceda câmera quando solicitado.';
+log('TP02 Web v0.1. Página pronta. Nenhuma foto é enviada para servidores.');
+</script>
+</body></html>
