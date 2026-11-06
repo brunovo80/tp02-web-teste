@@ -28,6 +28,7 @@ jobs:
           javac -encoding UTF-8 -d cleanroom/build \
             cleanroom/src/br/com/tp02/interop/Tp02Wire.java \
             cleanroom/src/br/com/tp02/interop/Tp02Session.java \
+            cleanroom/src/br/com/tp02/interop/Tp02TxQueue.java \
             cleanroom/tests/Tp02ProtocolTest.java
       - name: Verify protocol and security state gates
         run: java -ea -cp cleanroom/build Tp02ProtocolTest
