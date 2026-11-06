@@ -10,7 +10,7 @@ on:
       - '.github/workflows/build-tp02-v03.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -146,3 +146,20 @@ jobs:
           name: TP02-Identificacao-Licenca-v03
           path: native-tp02/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: Publicar APK direto no GitHub (pré-lançamento experimental)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="tp02-conexao-v0.3-experimental"
+          apk="native-tp02/app/build/outputs/apk/debug/app-debug.apk"
+          cp "$apk" "TP02-Conexao-v0.3.apk"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "TP02-Conexao-v0.3.apk" --clobber
+          else
+            gh release create "$tag" "TP02-Conexao-v0.3.apk" \
+              --title "TP02 Conexao 0.3 (diagnostico experimental)" \
+              --notes "APK experimental para teste BLE e identificacao F0. Nao ha espelhamento nem vinculacao do fabricante confirmados; nao substitui o Capar." \
+              --prerelease --target "$GITHUB_SHA"
+          fi
