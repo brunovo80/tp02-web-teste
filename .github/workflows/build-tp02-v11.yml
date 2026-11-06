@@ -1,0 +1,160 @@
+name: Compilar TP02 Integrado v1.1 - conexao unica
+on:
+  push:
+    branches: [capar-clone-protocolo]
+    paths:
+      - 'TP02_*.zip'
+      - 'scripts/build_v03.py'
+      - 'scripts/build_v04.py'
+      - 'scripts/build_integrado_v1.py'
+      - 'scripts/fix_single_gatt_v11.py'
+      - 'cleanroom/**'
+      - '.github/workflows/build-tp02-v11.yml'
+      - '.github/workflows/build-tp02-v11.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter projeto
+        uses: actions/checkout@v4
+      - name: Extrair projeto Android
+        shell: bash
+        run: |
+          ZIP=$(find . -maxdepth 1 -type f -name "TP02_*.zip" | head -n 1)
+          test -n "$ZIP" || { echo "Arquivo ZIP nao encontrado."; exit 1; }
+          mkdir -p native-tp02
+          unzip -q "$ZIP" -d native-tp02
+          test -f native-tp02/app/build.gradle
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Preparar SDK Android preinstalado
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SM" || { echo "SDK Manager nao localizado"; ls "$ANDROID_HOME/cmdline-tools"; exit 1; }
+          "$SM" --list_installed | head -40 || true
+          yes | "$SM" --licenses >/dev/null || true
+          "$SM" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Corrigir inicialização TextureView
+        shell: bash
+        run: |
+          FILE="native-tp02/app/src/main/java/br/com/tp02/prototipo/MainActivity.java"
+          test -f "$FILE" || { echo "MainActivity nao encontrada"; exit 1; }
+          grep -Fq 'preview.setBackgroundColor(Color.BLACK);' "$FILE" || { echo "Trecho original nao encontrado; revisar patch"; exit 1; }
+          sed -i 's/preview.setBackgroundColor(Color.BLACK);//' "$FILE"
+          if grep -Fq 'preview.setBackgroundColor(Color.BLACK);' "$FILE"; then echo "Patch nao aplicado"; exit 1; fi
+          echo "TextureView corrigida: sem fundo incompatível"
+      - name: Diagnostico BLE comparado ao Capar
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("native-tp02")
+          ble=root/"app/src/main/java/br/com/tp02/prototipo/Tp02Ble.java"
+          ui=root/"app/src/main/java/br/com/tp02/prototipo/MainActivity.java"
+          gradle=root/"app/build.gradle"
+          def sub(file, old, new):
+              s=file.read_text(encoding="utf-8")
+              if s.count(old)!=1: raise SystemExit("Trecho inconsistente em "+str(file)+": "+old[:60])
+              file.write_text(s.replace(old,new),encoding="utf-8")
+          sub(ble,"import java.util.Arrays;","import java.util.Arrays;\nimport java.util.ArrayList;\nimport java.util.LinkedHashMap;")
+          sub(ble,"private boolean scanning = false, ready = false;","""private boolean scanning = false, ready = false;
+              private final LinkedHashMap<String,BluetoothDevice> discovered=new LinkedHashMap<>();
+              private final LinkedHashMap<String,String> foundLabels=new LinkedHashMap<>();
+              private static final String VERIFIED_MAC="41:42:14:D8:45:7F";""")
+          sub(ble,'''            if (n != null && n.equalsIgnoreCase("SelfieCom")) {
+                          events.info("SelfieCom encontrado (RSSI " + result.getRssi() + "). Conectando GATT...");
+                          stopScan();
+                          connect(d);
+                      }''','''            String addr=d.getAddress();
+                      if(!discovered.containsKey(addr) && discovered.size()<60){
+                          discovered.put(addr,d);
+                          String label=(n==null || n.trim().isEmpty())?"(sem nome)":n;
+                          foundLabels.put(addr,label+" | "+addr+" | RSSI "+result.getRssi());
+                          events.info("BLE detectado: "+label+" | "+addr+" | RSSI "+result.getRssi());
+                      }
+                      if((n!=null && n.trim().equalsIgnoreCase("SelfieCom")) || addr.equalsIgnoreCase(VERIFIED_MAC)){
+                          events.info("Possível TP02 pelo nome/endereço observado: "+addr+". Conectando...");
+                          stopScan();connect(d);
+                      }''')
+          sub(ble,"    public boolean ready(){return ready;}","""    public String[] discoveredLabels(){return foundLabels.values().toArray(new String[0]);}
+              public boolean connectDiscovered(int index){
+                  if(index<0 || index>=discovered.size())return false;
+                  BluetoothDevice d=new ArrayList<>(discovered.values()).get(index);
+                  events.info("Tentativa manual de conexão GATT em "+d.getAddress());
+                  stopScan();connect(d);return true;
+              }
+              public boolean ready(){return ready;}""")
+          sub(ble,"        close();\n        BluetoothManager bm=","        close();\n        discovered.clear();foundLabels.clear();\n        BluetoothManager bm=")
+          sub(ble,'            events.info("MTU="+mtu+", status="+status+". Aguardando abertura da câmera pelo TP02...");','''            events.info("MTU="+mtu+", status="+status);
+                      if(status==BluetoothGatt.GATT_SUCCESS && ready){
+                          boolean sent=sendOne(new byte[]{(byte)0xAA,0x55,(byte)0xF4,0x00});
+                          events.info("Comando F4 observado no Capar 1.4.4: enviado="+sent);
+                      }
+                      events.info("Esperando comandos; negociação de licença não implementada.");''')
+          sub(ui,"    private Button connect, shoot;","    private Button connect, choose, shoot;")
+          sub(ui,'        connect=new Button(this);connect.setText("CONECTAR SELFIECOM");','        connect=new Button(this);connect.setText("PROCURAR TP02 (BLE)");')
+          sub(ui,'''        connect.setOnClickListener(v->{if(hasPermissions())ble.start();else requestAllPermissions();});
+                  root.addView(buttons);''','''        connect.setOnClickListener(v->{if(hasPermissions())ble.start();else requestAllPermissions();});
+                  root.addView(buttons);
+                  choose=new Button(this);choose.setText("ESCOLHER DISPOSITIVO BLE ENCONTRADO");
+                  choose.setOnClickListener(v->{
+                      String[] names=ble.discoveredLabels();
+                      if(names.length==0){info("Sem candidatos BLE. Executa a busca primeiro.");return;}
+                      new android.app.AlertDialog.Builder(this)
+                          .setTitle("Dispositivos próximos — escolher TP02")
+                          .setItems(names,(d,idx)->ble.connectDiscovered(idx))
+                          .setNegativeButton("Cancelar",null).show();
+                  });
+                  root.addView(choose,new LinearLayout.LayoutParams(-1,dp(56)));''')
+          sub(ui,'@Override public void onError(CameraDevice d,int err){d.close();camera=null;cameraReady=false;info("Erro na câmera: "+err);}','''@Override public void onError(CameraDevice d,int err){
+                              d.close();camera=null;cameraReady=false;
+                              info(err==CameraDevice.StateCallback.ERROR_CAMERA_DISABLED
+                                  ?"Erro 3: Android bloqueou a câmera; verificar acesso global e políticas do aparelho."
+                                  :"Erro na câmera: "+err);
+                          }''')
+          sub(ui,"Aplicativo experimental 0.1.0.","Aplicativo experimental 0.2.0 / diagnóstico BLE.")
+          sub(gradle,"versionCode 1","versionCode 2")
+          sub(gradle,"versionName '0.1.0-prototipo'","versionName '0.2.0-diagnostico'")
+          s=ui.read_text(encoding="utf-8").replace("        preview.setBackgroundColor(Color.BLACK);\n","")
+          ui.write_text(s,encoding="utf-8")
+          print("Scanner ampliado, escolha manual, F4 comprovado e código da câmera diagnosticado.")
+          PY
+      - name: Integrar protocolo de licença e UI de identificação automática
+        run: |
+          python3 scripts/build_v03.py
+          python3 scripts/build_v04.py
+          python3 scripts/build_integrado_v1.py
+          python3 scripts/fix_single_gatt_v11.py
+      - name: Verificar parâmetros obrigatórios da integração
+        shell: bash
+        run: |
+          grep -q "br.com.tp02.integrado" native-tp02/app/build.gradle
+          grep -q "Descoberta de serviços duplicada ignorada" native-tp02/app/src/main/java/br/com/tp02/prototipo/Tp02Ble.java
+          grep -q "WRITE AA 55 01 00 aceito pela API Android" native-tp02/app/src/main/java/br/com/tp02/prototipo/Tp02Ble.java
+          grep -q "ACCESS_FINE_LOCATION" native-tp02/app/src/main/AndroidManifest.xml
+          grep -q "Tp02DiscoveryV2.Decision" native-tp02/app/src/main/java/br/com/tp02/prototipo/Tp02Ble.java
+          grep -q "canStream" native-tp02/app/src/main/java/br/com/tp02/prototipo/Tp02Ble.java
+          grep -q "COPIAR DIAGNÓSTICO" native-tp02/app/src/main/java/br/com/tp02/prototipo/MainActivity.java
+          grep -q "beginLicenseRequest" native-tp02/app/src/main/java/br/com/tp02/prototipo/Tp02Ble.java
+          grep -q "AA 55 01 00" native-tp02/app/src/main/java/br/com/tp02/prototipo/MainActivity.java
+          ! grep -q "neverForLocation" native-tp02/app/src/main/AndroidManifest.xml
+      - name: Compilar APK de teste
+        run: gradle -p native-tp02 :app:assembleDebug --no-daemon --stacktrace
+      - name: Arquivo APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TP02-Integrado-v11-APK
+          path: native-tp02/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
