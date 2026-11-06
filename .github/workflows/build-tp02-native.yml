@@ -35,10 +35,11 @@ jobs:
         shell: bash
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          which sdkmanager
-          sdkmanager --list_installed | head -40 || true
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SM" || { echo "SDK Manager nao localizado"; ls "$ANDROID_HOME/cmdline-tools"; exit 1; }
+          "$SM" --list_installed | head -40 || true
+          yes | "$SM" --licenses >/dev/null || true
+          "$SM" 'platforms;android-35' 'build-tools;35.0.0'
       - name: Compilar APK de teste
         run: gradle -p native-tp02 :app:assembleDebug --no-daemon --stacktrace
       - name: Arquivo APK
