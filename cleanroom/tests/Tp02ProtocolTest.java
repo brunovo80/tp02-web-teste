@@ -49,6 +49,25 @@ public final class Tp02ProtocolTest {
         ok(Tp02Wire.hex(state.onOpenCamera(camera)).equals("AA 55 01 00"),"authorized camera ACK");
         ok(state.mayStream(),"stream after authorization");
         state.reset();ok(!state.mayStream(),"disconnect clears state");
+        Tp02TxQueue queue=new Tp02TxQueue();
+        byte[] image=new byte[45];for(int i=0;i<image.length;i++)image[i]=(byte)i;
+        ok(queue.begin(image,23),"begin JPEG");
+        ok(!queue.begin(image,23),"reject overlap");
+        byte[] a=queue.nextPacket();ok(a.length==20,"first chunk");
+        ok(queue.nextPacket()==null,"must wait callback");
+        queue.onWriteResult(true);ok(queue.acknowledgedBytes()==20,"first ACK");
+        byte[] b=queue.nextPacket();ok(b.length==20,"second chunk");
+        queue.onWriteResult(true);
+        byte[] c=queue.nextPacket();ok(c.length==5,"last chunk");
+        queue.onWriteResult(true);ok(!queue.isBusy(),"all chunks sent");
+        byte[] combined=new byte[45];System.arraycopy(a,0,combined,0,20);
+        System.arraycopy(b,0,combined,20,20);System.arraycopy(c,0,combined,40,5);
+        ok(Arrays.equals(combined,image),"no byte loss");
+        ok(queue.begin(image,23),"queue reusable");
+        queue.nextPacket();queue.onWriteResult(false);
+        ok(!queue.isBusy(),"stop after error");
+        rejects(()->queue.onWriteResult(true),"spurious callback");
+        ok(!queue.begin(new byte[0],23),"empty JPEG");
         System.out.println("PASS: "+count+" wire protocol and authorization state tests.");
     }
 }
