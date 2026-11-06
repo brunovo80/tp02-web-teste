@@ -22,8 +22,10 @@ replace(ble,
             if(!scanning || connecting || gatt!=null)return;
             BluetoothDevice d = result.getDevice();""")
 replace(ble,
-    """stopScan();connect(d);""",
-    """connecting=true;
+    """events.info("Validando serviço de comunicação no monitor...");
+                stopScan();connect(d);""",
+    """events.info("Validando serviço de comunicação no monitor...");
+                connecting=true;
                 stopScan();connect(d);""")
 replace(ble,
     """catch(Exception e){events.info("Conexão GATT falhou: "+e.getMessage());}""",
