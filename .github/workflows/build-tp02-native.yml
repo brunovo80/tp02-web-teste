@@ -1,0 +1,44 @@
+name: Compilar TP02 Android (APK experimental)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'TP02_Imagem_Real_Compilacao_Online.zip'
+      - '.github/workflows/build-tp02-native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Obter projeto
+        uses: actions/checkout@v4
+      - name: Extrair projeto Android
+        shell: bash
+        run: |
+          test -f TP02_Imagem_Real_Compilacao_Online.zip || { echo "Arquivo ZIP nao encontrado."; exit 1; }
+          mkdir -p native-tp02
+          unzip -q TP02_Imagem_Real_Compilacao_Online.zip -d native-tp02
+          test -f native-tp02/app/build.gradle
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Instalar componentes Android
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Compilar APK de teste
+        run: gradle -p native-tp02 :app:assembleDebug --no-daemon --stacktrace
+      - name: Arquivo APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tp02-imagem-real-apk-debug
+          path: native-tp02/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
