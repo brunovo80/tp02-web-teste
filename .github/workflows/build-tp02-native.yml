@@ -124,7 +124,7 @@ jobs:
           s=ui.read_text(encoding="utf-8").replace("        preview.setBackgroundColor(Color.BLACK);\n","")
           ui.write_text(s,encoding="utf-8")
           print("Scanner ampliado, escolha manual, F4 comprovado e código da câmera diagnosticado.")
-                    PY
+          PY
       - name: Compilar APK de teste
         run: gradle -p native-tp02 :app:assembleDebug --no-daemon --stacktrace
       - name: Arquivo APK
