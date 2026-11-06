@@ -29,6 +29,10 @@ jobs:
             cleanroom/src/br/com/tp02/interop/Tp02Wire.java \
             cleanroom/src/br/com/tp02/interop/Tp02Session.java \
             cleanroom/src/br/com/tp02/interop/Tp02TxQueue.java \
-            cleanroom/tests/Tp02ProtocolTest.java
+            cleanroom/src/br/com/tp02/interop/Tp02Advertisement.java \
+            cleanroom/tests/Tp02ProtocolTest.java \
+            cleanroom/tests/Tp02AdvertisementTest.java
       - name: Verify protocol and security state gates
         run: java -ea -cp cleanroom/build Tp02ProtocolTest
+      - name: Validate BLE identity against recorded HCI data
+        run: java -ea -cp cleanroom/build Tp02AdvertisementTest
