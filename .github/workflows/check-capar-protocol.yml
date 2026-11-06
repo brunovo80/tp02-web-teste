@@ -1,0 +1,33 @@
+name: Verify Capar TP02 clean-room protocol
+on:
+  push:
+    branches: [capar-clone-protocolo]
+    paths:
+      - 'cleanroom/**'
+      - '.github/workflows/check-capar-protocol.yml'
+  pull_request:
+    paths:
+      - 'cleanroom/**'
+      - '.github/workflows/check-capar-protocol.yml'
+permissions:
+  contents: read
+jobs:
+  protocol-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile clean-room protocol
+        shell: bash
+        run: |
+          mkdir -p cleanroom/build
+          javac -encoding UTF-8 -d cleanroom/build \
+            cleanroom/src/br/com/tp02/interop/Tp02Wire.java \
+            cleanroom/src/br/com/tp02/interop/Tp02Session.java \
+            cleanroom/tests/Tp02ProtocolTest.java
+      - name: Verify protocol and security state gates
+        run: java -ea -cp cleanroom/build Tp02ProtocolTest
